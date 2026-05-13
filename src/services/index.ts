@@ -5,4 +5,5 @@ export { feedService } from './feed';
 export { analyticsService } from './analytics';
 export { eventsService } from './events';
 export { notificationService } from './notifications';
+export { weatherService } from './weather';
 export { authApi, walletApi, feedApi, mindApi, handleApiError } from './api';
