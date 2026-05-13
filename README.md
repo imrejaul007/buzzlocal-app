@@ -18,6 +18,23 @@ Part of REZ-Consumer. Users find all local information and earn ReZ Coins. Every
 
 ---
 
+## Tech Stack
+
+| Category | Technology |
+|----------|------------|
+| Framework | React Native (Expo SDK 53) |
+| Language | TypeScript |
+| Navigation | Expo Router |
+| State | Zustand |
+| HTTP | Axios |
+| Maps | react-native-maps |
+| Real-time | Socket.IO |
+| Notifications | expo-notifications |
+| Error Monitoring | Sentry |
+| CI/CD | GitHub Actions |
+
+---
+
 ## Screens (18)
 
 | # | Screen | File | Description |
@@ -102,6 +119,50 @@ npm install
 npx expo prebuild
 npx expo run:ios
 ```
+
+---
+
+## Environment Variables
+
+```env
+# RABTUL Core
+EXPO_PUBLIC_AUTH_URL=https://rez-auth-service.onrender.com
+EXPO_PUBLIC_WALLET_URL=https://rez-wallet-service.onrender.com
+
+# BuzzLocal
+EXPO_PUBLIC_FEED_URL=https://buzzlocal-feed.onrender.com
+EXPO_PUBLIC_VIBE_URL=https://buzzlocal-vibe.onrender.com
+EXPO_PUBLIC_EVENTS_URL=https://buzzlocal-events.onrender.com
+EXPO_PUBLIC_NOTIFICATIONS_URL=https://buzzlocal-notifications.onrender.com
+EXPO_PUBLIC_REALTIME_URL=https://buzzlocal-realtime.onrender.com
+
+# REZ Intelligence
+EXPO_PUBLIC_MIND_URL=https://rez-mind.onrender.com
+
+# External
+EXPO_PUBLIC_WEATHER_API_KEY=your-key
+EXPO_PUBLIC_MAPBOX_TOKEN=your-token
+EXPO_PUBLIC_SENTRY_DSN=https://xxx@sentry.io/xxx
+EXPO_PUBLIC_PROJECT_ID=your-expo-project
+```
+
+---
+
+## GitHub Actions
+
+| Workflow | Trigger | Description |
+|----------|---------|-------------|
+| `ci.yml` | Push/PR | Lint, TypeCheck, Test, Build |
+| `deploy.yml` | Push to main | Deploy to production |
+
+### Secrets Required
+
+| Secret | Description |
+|--------|-------------|
+| `EXPO_TOKEN` | Expo token for publishing |
+| `FIREBASE_TOKEN` | Firebase App Distribution |
+| `APPLE_API_KEY` | App Store Connect API key |
+| `SENTRY_DSN` | Sentry error monitoring |
 
 ---
 

@@ -45,7 +45,15 @@
         {
           "locationAlwaysAndWhenInUsePermission": "Allow BuzzLocal to use your location to show nearby content."
         }
-      ]
+      ],
+      [
+        "expo-notifications",
+        {
+          "icon": "./assets/icon.png",
+          "color": "#6366F1"
+        }
+      ],
+      "sentry-expo"
     ],
     "experiments": {
       "typedRoutes": true

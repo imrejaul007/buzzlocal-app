@@ -1,7 +1,16 @@
 import * as Notifications from 'expo-notifications';
 import * as Device from 'expo-device';
 import { Platform } from 'react-native';
-import { feedApi } from './api';
+import axios from 'axios';
+
+const NOTIFICATIONS_URL = process.env.EXPO_PUBLIC_NOTIFICATIONS_URL || 'https://buzzlocal-notifications.onrender.com';
+
+// API for notifications backend
+const api = axios.create({
+  baseURL: NOTIFICATIONS_URL,
+  timeout: 10000,
+  headers: { 'Content-Type': 'application/json' },
+});
 
 // Configure notification handler
 Notifications.setNotificationHandler({
@@ -137,13 +146,63 @@ class NotificationService {
    */
   async registerToken(token: string): Promise<void> {
     try {
-      await feedApi.post('/notifications/register', {
+      await api.post('/notifications/register', {
         token,
         platform: Platform.OS,
         deviceId: Device.deviceName,
       });
     } catch (error) {
       console.error('Failed to register token:', error);
+    }
+  }
+
+  /**
+   * Get notifications from backend
+   */
+  async getNotifications(page: number = 1): Promise<any[]> {
+    try {
+      const response = await api.get('/notifications', { params: { page } });
+      return response.data.notifications;
+    } catch (error) {
+      console.error('Failed to get notifications:', error);
+      return [];
+    }
+  }
+
+  /**
+   * Mark notification as read
+   */
+  async markAsRead(notificationId: string): Promise<void> {
+    try {
+      await api.put(`/notifications/${notificationId}/read`);
+    } catch (error) {
+      console.error('Failed to mark as read:', error);
+    }
+  }
+
+  /**
+   * Delete notification
+   */
+  async deleteNotification(notificationId: string): Promise<void> {
+    try {
+      await api.delete(`/notifications/${notificationId}`);
+    } catch (error) {
+      console.error('Failed to delete notification:', error);
+    }
+  }
+
+  /**
+   * Send test notification (for development)
+   */
+  async sendTestNotification(): Promise<void> {
+    try {
+      await api.post('/notifications/send', {
+        title: 'Test Notification',
+        body: 'This is a test from BuzzLocal!',
+        category: 'system',
+      });
+    } catch (error) {
+      console.error('Failed to send test notification:', error);
     }
   }
 
