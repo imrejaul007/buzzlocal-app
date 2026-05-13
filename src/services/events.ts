@@ -1,6 +1,44 @@
-import { feedApi } from './api';
+import axios, { AxiosError } from 'axios';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import * as SecureStore from 'expo-secure-store';
 
-const EVENTS_BASE_URL = process.env.EXPO_PUBLIC_EVENTS_URL || 'http://localhost:4008';
+// Service URLs
+const EVENTS_URL = process.env.EXPO_PUBLIC_EVENTS_URL || 'https://buzzlocal-events.onrender.com';
+const REZ_EVENT_PLATFORM = process.env.EXPO_PUBLIC_REZ_EVENTS_URL || 'https://rez-event-platform.onrender.com';
+
+// API instance
+const api = axios.create({
+  baseURL: EVENTS_URL,
+  timeout: 15000,
+  headers: { 'Content-Type': 'application/json' },
+});
+
+// Add auth token
+api.interceptors.request.use(async (config) => {
+  const token = await SecureStore.getItemAsync('authToken');
+  if (token) {
+    config.headers.Authorization = `Bearer ${token}`;
+  }
+  config.headers['X-App-Id'] = 'buzzlocal';
+  return config;
+});
+
+// Track events for REZ Mind
+const trackToREZ = async (eventType: string, data: any) => {
+  try {
+    await axios.post(`${REZ_EVENT_PLATFORM}/events`, {
+      type: eventType,
+      data,
+      source: 'buzzlocal',
+      timestamp: Date.now(),
+    }, {
+      timeout: 5000,
+    });
+  } catch (error) {
+    // Don't fail main operation if tracking fails
+    console.log('REZ tracking failed (non-critical):', eventType);
+  }
+};
 
 export interface Event {
   id: string;
@@ -49,125 +87,340 @@ export interface Ticket {
   event: Event | null;
 }
 
-export const eventsService = {
+export interface EventFilters {
+  category?: string;
+  lat?: number;
+  lng?: number;
+  radius?: number;
+  date?: string;
+  free?: boolean;
+  page?: number;
+  limit?: number;
+}
+
+class EventsService {
   /**
    * Get events with filters
    */
-  getEvents: async (params?: {
-    category?: string;
-    lat?: number;
-    lng?: number;
-    radius?: number;
-    page?: number;
-    limit?: number;
-  }): Promise<{ events: Event[]; page: number; limit: number; total: number; hasMore: boolean }> => {
+  async getEvents(params?: EventFilters): Promise<{
+    events: Event[];
+    page: number;
+    limit: number;
+    total: number;
+    hasMore: boolean;
+  }> {
     try {
-      const response = await feedApi.get(`${EVENTS_BASE_URL}/events`, { params });
+      const response = await api.get('/events', { params });
       return response.data;
-    } catch (error) {
-      console.error('Failed to fetch events:', error);
-      throw new Error('Failed to fetch events');
+    } catch (error: any) {
+      const message = error.response?.data?.message || 'Failed to fetch events';
+      throw new Error(message);
     }
-  },
+  }
 
   /**
    * Get trending events
    */
-  getTrendingEvents: async (limit: number = 10): Promise<{ events: Event[] }> => {
+  async getTrendingEvents(limit: number = 10): Promise<Event[]> {
     try {
-      const response = await feedApi.get(`${EVENTS_BASE_URL}/events/trending`, { params: { limit } });
-      return response.data;
-    } catch (error) {
-      console.error('Failed to fetch trending events:', error);
-      throw new Error('Failed to fetch trending events');
+      const response = await api.get('/events/trending', { params: { limit } });
+      return response.data.events;
+    } catch (error: any) {
+      const message = error.response?.data?.message || 'Failed to fetch trending events';
+      throw new Error(message);
     }
-  },
+  }
 
   /**
    * Get nearby events
    */
-  getNearbyEvents: async (params: {
+  async getNearbyEvents(params: {
     lat: number;
     lng: number;
     radius?: number;
     limit?: number;
-  }): Promise<{ events: Event[] }> => {
+  }): Promise<Event[]> {
     try {
-      const response = await feedApi.get(`${EVENTS_BASE_URL}/events/nearby`, { params });
-      return response.data;
-    } catch (error) {
-      console.error('Failed to fetch nearby events:', error);
-      throw new Error('Failed to fetch nearby events');
+      const response = await api.get('/events/nearby', { params });
+      return response.data.events;
+    } catch (error: any) {
+      const message = error.response?.data?.message || 'Failed to fetch nearby events';
+      throw new Error(message);
     }
-  },
+  }
 
   /**
    * Get single event
    */
-  getEvent: async (eventId: string): Promise<Event> => {
+  async getEvent(eventId: string): Promise<Event> {
     try {
-      const response = await feedApi.get(`${EVENTS_BASE_URL}/events/${eventId}`);
-      return response.data;
-    } catch (error) {
-      console.error('Failed to fetch event:', error);
-      throw new Error('Failed to fetch event');
+      const response = await api.get(`/events/${eventId}`);
+
+      // Track view to REZ Mind
+      const event = response.data;
+      await trackToREZ('event_view', {
+        eventId: event.id,
+        category: event.category,
+        location: event.location,
+        organizerId: event.organizer.id,
+      });
+
+      return event;
+    } catch (error: any) {
+      const message = error.response?.data?.message || 'Failed to fetch event';
+      throw new Error(message);
     }
-  },
+  }
 
   /**
    * Express interest in event
    */
-  expressInterest: async (eventId: string): Promise<{ interested: boolean }> => {
+  async expressInterest(eventId: string): Promise<{ interested: boolean; newCount: number }> {
     try {
-      const response = await feedApi.post(`${EVENTS_BASE_URL}/events/${eventId}/interest`);
-      return response.data;
-    } catch (error) {
-      console.error('Failed to express interest:', error);
-      throw new Error('Failed to express interest');
+      const response = await api.post(`/events/${eventId}/interest`);
+      const result = response.data;
+
+      // Track to REZ Mind
+      await trackToREZ('event_interest', {
+        eventId,
+        interested: result.interested,
+        category: 'unknown', // Would get from event
+      });
+
+      return result;
+    } catch (error: any) {
+      const message = error.response?.data?.message || 'Failed to express interest';
+      throw new Error(message);
     }
-  },
+  }
+
+  /**
+   * Create event
+   */
+  async createEvent(eventData: Partial<Event>): Promise<Event> {
+    try {
+      const response = await api.post('/events', eventData);
+      const event = response.data;
+
+      // Track to REZ Event Platform
+      await trackToREZ('event_created', {
+        eventId: event.id,
+        title: event.title,
+        category: event.category,
+        location: event.location,
+        isPaid: event.isPaid,
+        ticketPrice: event.ticketPrice,
+        organizerId: event.organizer.id,
+      });
+
+      // Store in local cache
+      await this.cacheEvent(event);
+
+      return event;
+    } catch (error: any) {
+      const message = error.response?.data?.message || 'Failed to create event';
+      throw new Error(message);
+    }
+  }
+
+  /**
+   * Update event
+   */
+  async updateEvent(eventId: string, eventData: Partial<Event>): Promise<Event> {
+    try {
+      const response = await api.patch(`/events/${eventId}`, eventData);
+      const event = response.data;
+
+      // Track to REZ
+      await trackToREZ('event_updated', {
+        eventId,
+        changes: Object.keys(eventData),
+      });
+
+      return event;
+    } catch (error: any) {
+      const message = error.response?.data?.message || 'Failed to update event';
+      throw new Error(message);
+    }
+  }
+
+  /**
+   * Cancel event
+   */
+  async cancelEvent(eventId: string): Promise<void> {
+    try {
+      await api.post(`/events/${eventId}/cancel`);
+
+      // Track to REZ
+      await trackToREZ('event_cancelled', { eventId });
+    } catch (error: any) {
+      const message = error.response?.data?.message || 'Failed to cancel event';
+      throw new Error(message);
+    }
+  }
 
   /**
    * Purchase ticket
    */
-  purchaseTicket: async (eventId: string, quantity: number = 1): Promise<{ ticket: Ticket; qrCode: string }> => {
+  async purchaseTicket(eventId: string, quantity: number = 1): Promise<{
+    ticket: Ticket;
+    qrCode: string;
+  }> {
     try {
-      const response = await feedApi.post(`${EVENTS_BASE_URL}/tickets`, {
+      const response = await api.post('/tickets', { eventId, quantity });
+      const result = response.data;
+
+      // Track to REZ Mind
+      await trackToREZ('ticket_purchased', {
+        ticketId: result.ticket.id,
         eventId,
         quantity,
+        amount: result.ticket.totalAmount,
       });
-      return response.data;
-    } catch (error) {
-      console.error('Failed to purchase ticket:', error);
-      throw new Error('Failed to purchase ticket');
+
+      return result;
+    } catch (error: any) {
+      const message = error.response?.data?.message || 'Failed to purchase ticket';
+      throw new Error(message);
     }
-  },
+  }
+
+  /**
+   * Check-in with ticket
+   */
+  async checkIn(ticketCode: string): Promise<{ success: boolean; ticket: Ticket }> {
+    try {
+      const response = await api.post('/tickets/checkin', { ticketCode });
+      const result = response.data;
+
+      // Track to REZ Mind
+      await trackToREZ('event_attended', {
+        ticketId: result.ticket.id,
+        eventId: result.ticket.event?.id,
+        location: result.ticket.event?.location,
+      });
+
+      return result;
+    } catch (error: any) {
+      const message = error.response?.data?.message || 'Check-in failed';
+      throw new Error(message);
+    }
+  }
 
   /**
    * Get user's tickets
    */
-  getUserTickets: async (): Promise<{ tickets: Ticket[] }> => {
+  async getMyTickets(): Promise<Ticket[]> {
     try {
-      const response = await feedApi.get(`${EVENTS_BASE_URL}/tickets/user`);
-      return response.data;
-    } catch (error) {
-      console.error('Failed to fetch tickets:', error);
-      throw new Error('Failed to fetch tickets');
+      const response = await api.get('/tickets/user');
+      return response.data.tickets;
+    } catch (error: any) {
+      const message = error.response?.data?.message || 'Failed to fetch tickets';
+      throw new Error(message);
     }
-  },
+  }
 
   /**
-   * Check in with ticket
+   * Get ticket by code
    */
-  checkIn: async (ticketCode: string): Promise<{ success: boolean; ticket: Ticket }> => {
+  async getTicketByCode(ticketCode: string): Promise<Ticket> {
     try {
-      const response = await feedApi.post(`${EVENTS_BASE_URL}/tickets/checkin`, {
-        ticketCode,
+      const response = await api.get('/tickets/code', {
+        params: { code: ticketCode },
       });
-      return response.data;
-    } catch (error) {
-      console.error('Failed to check in:', error);
-      throw new Error('Check-in failed');
+      return response.data.ticket;
+    } catch (error: any) {
+      const message = error.response?.data?.message || 'Failed to fetch ticket';
+      throw new Error(message);
     }
-  },
-};
+  }
+
+  /**
+   * Cancel ticket (refund)
+   */
+  async cancelTicket(ticketId: string): Promise<void> {
+    try {
+      await api.post(`/tickets/${ticketId}/cancel`);
+
+      // Track to REZ
+      await trackToREZ('ticket_cancelled', { ticketId });
+    } catch (error: any) {
+      const message = error.response?.data?.message || 'Failed to cancel ticket';
+      throw new Error(message);
+    }
+  }
+
+  /**
+   * Get event predictions from REZ Mind
+   */
+  async getEventPredictions(eventId: string): Promise<{
+    predictedAttendance: number;
+    peakTime: string;
+    confidence: number;
+  }> {
+    try {
+      const response = await api.get(`/events/${eventId}/predictions`);
+      return response.data.predictions;
+    } catch (error) {
+      // Return defaults if prediction fails
+      return {
+        predictedAttendance: 50,
+        peakTime: '8:00 PM',
+        confidence: 0.5,
+      };
+    }
+  }
+
+  /**
+   * Share event
+   */
+  async shareEvent(eventId: string): Promise<void> {
+    await trackToREZ('event_shared', { eventId });
+  }
+
+  /**
+   * Cache event locally
+   */
+  private async cacheEvent(event: Event): Promise<void> {
+    try {
+      const key = `event_${event.id}`;
+      await AsyncStorage.setItem(key, JSON.stringify(event));
+    } catch (error) {
+      console.error('Failed to cache event:', error);
+    }
+  }
+
+  /**
+   * Get cached event
+   */
+  async getCachedEvent(eventId: string): Promise<Event | null> {
+    try {
+      const data = await AsyncStorage.getItem(`event_${eventId}`);
+      return data ? JSON.parse(data) : null;
+    } catch (error) {
+      return null;
+    }
+  }
+
+  /**
+   * Get event categories
+   */
+  getCategories(): { id: string; label: string; icon: string }[] {
+    return [
+      { id: 'music', label: 'Music', icon: 'musical-notes' },
+      { id: 'tech', label: 'Tech', icon: 'laptop' },
+      { id: 'food', label: 'Food', icon: 'restaurant' },
+      { id: 'sports', label: 'Sports', icon: 'football' },
+      { id: 'arts', label: 'Arts', icon: 'color-palette' },
+      { id: 'networking', label: 'Networking', icon: 'people' },
+      { id: 'wellness', label: 'Wellness', icon: 'fitness' },
+      { id: 'gaming', label: 'Gaming', icon: 'game-controller' },
+      { id: 'education', label: 'Education', icon: 'school' },
+      { id: 'nightlife', label: 'Nightlife', icon: 'moon' },
+      { id: 'community', label: 'Community', icon: 'heart' },
+      { id: 'other', label: 'Other', icon: 'ellipsis-horizontal' },
+    ];
+  }
+}
+
+export const eventsService = new EventsService();
