@@ -166,6 +166,51 @@ EXPO_PUBLIC_PROJECT_ID=your-expo-project
 
 ---
 
+## Testing
+
+### E2E Tests (Playwright)
+
+```bash
+# Install dependencies
+npm install
+
+# Install Playwright browsers
+npx playwright install
+
+# Run E2E tests
+npm run test:e2e
+
+# Run with UI
+npm run test:e2e:ui
+
+# Run headed
+npm run test:e2e:headed
+```
+
+### Test Coverage
+
+| Feature | Status |
+|---------|--------|
+| Authentication Flow | ✅ |
+| Home Feed | ✅ |
+| Navigation | ✅ |
+| Post Creation | ✅ |
+| Events | ✅ |
+| Weather | ✅ |
+| Profile | ✅ |
+| Wallet | ✅ |
+| Error Handling | ✅ |
+
+### Analytics Dashboard
+
+Access via Creator Dashboard screen:
+- User statistics
+- Leaderboard
+- Trending areas
+- Engagement metrics
+
+---
+
 ## Related
 
 | Repo | Purpose |
